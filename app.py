@@ -12,7 +12,7 @@ from scent_map import scent_map
 
 # Set page config
 st.set_page_config(
-    page_title="Sleep Analysis Dashboard",
+    page_title="Kimba Data Analysis",
     page_icon="🌙",
     layout="wide"
 )
