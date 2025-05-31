@@ -76,15 +76,20 @@ def identify_siren_nights(df):
 st.title("Kimba Sleep Analysis")
 
 # Load data
-@st.cache_data
 def load_data():
+    """Load and process the night data with siren detection"""
     df = load_night_data()
     if df is not None:
         # Identify siren nights
         df = identify_siren_nights(df)
     return df
 
-df = load_data()
+# Cache the data loading
+@st.cache_data
+def get_cached_data():
+    return load_data()
+
+df = get_cached_data()
 
 if df is not None:
     # Sidebar controls
