@@ -75,6 +75,11 @@ def identify_siren_nights(df):
 # Title
 st.title("Kimba Sleep Analysis")
 
+# Add cache refresh button
+if st.button("🔄 Refresh Data (Clear Cache)"):
+    st.cache_data.clear()
+    st.rerun()
+    
 # Load data
 def load_data():
     """Load and process the night data with siren detection"""
