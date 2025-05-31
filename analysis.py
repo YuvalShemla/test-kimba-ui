@@ -72,17 +72,62 @@ def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5,
         width=0.3
     ))
     
-    # Add mean diff as an annotation in the legend area
-    fig.add_annotation(
-        text=mean_diff_text,
-        xref="paper", yref="paper",
-        x=1, y=1.13,  # above the legend
-        showarrow=False,
-        font=dict(size=16, color="black", family="Arial"),
-        align="right",
-        bgcolor="rgba(255,255,255,0.7)",
-        bordercolor="black",
-        borderwidth=1
+    # Calculate mean values for reference lines
+    control_mean = np.nanmean(y_control)
+    active_mean = np.nanmean(y_active)
+    
+    # Add control mean line as a trace (appears in legend)
+    fig.add_trace(go.Scatter(
+        x=[custom_labels[0], custom_labels[-1]],
+        y=[control_mean, control_mean],
+        mode='lines',
+        line=dict(color=palette["control"], dash='dash', width=3),
+        name='Control Mean',
+        hoverinfo='skip',
+        showlegend=True
+    ))
+    
+    # Add active mean line as a trace (appears in legend)  
+    fig.add_trace(go.Scatter(
+        x=[custom_labels[0], custom_labels[-1]],
+        y=[active_mean, active_mean],
+        mode='lines',
+        line=dict(color=palette["active"], dash='dash', width=3),
+        name='Active Mean',
+        hoverinfo='skip',
+        showlegend=True
+    ))
+
+    # Add mean percentage difference as a legend entry (invisible trace)
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(size=0),
+        name=mean_diff_text,
+        showlegend=True,
+        hoverinfo='skip'
+    ))
+
+    # Add horizontal dashed lines for mean values
+    control_mean = np.nanmean(y_control)
+    active_mean = np.nanmean(y_active)
+    
+    # Control mean line
+    fig.add_shape(
+        type='line',
+        x0=-0.5, x1=len(user_ids)-0.5,
+        y0=control_mean, y1=control_mean,
+        line=dict(color=palette["control"], dash='dash', width=2),
+        name="Control Mean"
+    )
+    
+    # Active mean line  
+    fig.add_shape(
+        type='line',
+        x0=-0.5, x1=len(user_ids)-0.5,
+        y0=active_mean, y1=active_mean,
+        line=dict(color=palette["active"], dash='dash', width=2),
+        name=" Active Mean"
     )
     
     # Update layout
@@ -95,29 +140,45 @@ def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5,
         height=700,
         width=fig_width,
         template='plotly_white',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        legend=dict(
+            orientation='h', 
+            yanchor='bottom', 
+            y=1.02, 
+            xanchor='left', 
+            x=0,
+            font=dict(size=14)
+        ),
         plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=False, tickangle=-45, type='category'),
         yaxis=dict(showgrid=True, gridcolor='lightgrey'),
-        margin=dict(l=40, r=40, t=80, b=180)
+        margin=dict(l=40, r=40, t=100, b=180)
     )
+    
+    # Set y-axis range to start from below the minimum value
+    min_value = min(min(y_control), min(y_active))
+    max_value = max(max(y_control), max(y_active))
+    value_range = max_value - min_value
+    bottom_padding = value_range * 0.1  # 10% padding below
+    top_padding = value_range * 0.15    # 15% padding above
+    
+    fig.update_yaxes(range=[min_value - bottom_padding, max_value + top_padding])
     
     return fig
 
 # Define the features to plot with their display names and units
 FEATURES_TO_PLOT = {
+    'heart_rate_mean': ('Heart Rate Mean', 'bpm'),
+    'bbi_mean': ('BBI Mean', 'ms'),
+    'hrv_std_hr_mean': ('RMSSD (HRV)', 'ms'),
+    'stress_level_mean': ('Stress Level Mean', 'level'),
     'sleep_efficiency': ('Sleep Efficiency', '%'),
     'total_sleep_time': ('Total Sleep Time', 'minutes'),
     'waso_duration': ('WASO Duration', 'minutes'),
     'waso_count': ('WASO Count', 'count'),
     'sleep_latency': ('Sleep Latency', 'minutes'),
-    'heart_rate_mean': ('Heart Rate Mean', 'bpm'),
-    'hrv_mean_hr_mean': ('HRV Heart Rate Mean', 'ms'),
-    'bbi_mean': ('BBI HRV Mean', 'ms'),
-    'hrv_std_hr_mean': ('RMSSD', 'ms'),
     'acc_magnitude_mean': ('Movement Vector', 'm/s²'),
     'respiration_rate_mean': ('Respiration Rate', 'breaths/min'),
     'oxygen_level_mean': ('SpO2', '%'),
     'deep_duration': ('Deep Sleep', 'minutes'),
-    'rem_duration': ('REM Sleep', 'minutes')
+    'rem_duration': ('REM Sleep', 'minutes'),
 } 

@@ -16,6 +16,17 @@ def test_analysis():
     print("\nDataset Overview:")
     print(f"Total Users: {len(df['user_id'].unique())}")
     print(f"Total Nights: {len(df)}")
+    
+    # Print unique user breakdown by diffuser category
+    print("\nUnique User Breakdown by Diffuser Category:")
+    for category in df['diffuser_category'].unique():
+        unique_users_in_category = df[df['diffuser_category'] == category]['user_id'].nunique()
+        print(f"- {category}: {unique_users_in_category} unique users")
+    
+    # Specifically highlight active users
+    active_users = df[df['diffuser_category'] == 'active']['user_id'].nunique()
+    print(f"\n*** Active diffuser category has {active_users} unique users ***")
+    
     print("\nColumns in the dataset:")
     for col in df.columns:
         print(f"- {col}")

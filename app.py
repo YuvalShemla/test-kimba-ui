@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import numpy as np
 from palette import palette
 from scent_map import scent_map
+from datetime import datetime
 
 
 # Set page config
@@ -17,13 +18,71 @@ st.set_page_config(
     layout="wide"
 )
 
+def identify_siren_nights(df):
+    """
+    Identify nights that overlap with siren events
+    """
+    # Define siren events (date and time when sirens occurred)
+    siren_events = [
+        ("14/01/2025", "03:00"),
+        ("20/03/2025", "04:00"),
+        ("21/03/2025", "22:30"),
+        ("23/03/2025", "07:23"),
+        ("18/04/2025", "06:36"),
+        ("23/04/2025", "03:58"),
+        ("26/04/2025", "02:45"),
+        ("27/04/2025", "04:50"),
+        ("02/05/2025", "05:30"),
+        ("03/05/2025", "06:23"),
+        ("15/05/2025", "21:10"),
+        ("18/05/2025", "02:00"),
+        ("22/05/2025", "03:00"),
+        ("23/05/2025", "04:12")
+    ]
+    
+    # Convert siren events to datetime objects
+    siren_datetimes = []
+    for date_str, time_str in siren_events:
+        try:
+            # Parse DD/MM/YYYY format
+            dt = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M")
+            siren_datetimes.append(dt)
+        except ValueError:
+            continue
+    
+    # Add siren flag column
+    df['is_siren_night'] = 0
+    
+    # Check each night against siren events
+    for idx, row in df.iterrows():
+        try:
+            # Convert start_date and end_date to datetime
+            start_dt = pd.to_datetime(row['start_date'])
+            end_dt = pd.to_datetime(row['end_date'])
+            
+            # Check if any siren event falls within this sleep period
+            for siren_dt in siren_datetimes:
+                if start_dt <= siren_dt <= end_dt:
+                    df.at[idx, 'is_siren_night'] = 1
+                    break
+                    
+        except (ValueError, TypeError):
+            # Skip rows with invalid dates
+            continue
+    
+    return df
+
 # Title
 st.title("Kimba Sleep Analysis")
 
 # Load data
 @st.cache_data
 def load_data():
-    return load_night_data()
+    df = load_night_data()
+    if df is not None:
+        # Identify siren nights
+        df = identify_siren_nights(df)
+    return df
 
 df = load_data()
 
@@ -49,6 +108,7 @@ if df is not None:
     # Sidebar filters
     exclude_alcohol = st.sidebar.checkbox("Exclude nights with alcohol", value=True)
     exclude_sick = st.sidebar.checkbox("Exclude nights when sick", value=True)
+    exclude_siren = st.sidebar.checkbox("Exclude siren nights", value=True)
 
     # Get all unique scent serials from active nights only, filter out -1 and 21
     all_scent_serials = sorted(
@@ -64,13 +124,49 @@ if df is not None:
         format_func=lambda x: scent_options[x]
     )
 
+    # User ID filter - get all unique user IDs and start with all selected
+    all_user_ids = sorted(df['user_id'].unique())
+    
+    # Initialize session state if it doesn't exist
+    if 'user_selection' not in st.session_state:
+        st.session_state.user_selection = []
+    
+    # The multiselect dropdown
+    selected_user_ids = st.sidebar.multiselect(
+        "Filter by User ID",
+        options=all_user_ids,
+        default=st.session_state.user_selection,
+        help="Select/deselect specific users. Use buttons below for quick select all/none."
+    )
+    
+    # Add buttons for select all / deselect all
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("Select All", key="select_all_users"):
+            st.session_state.user_selection = all_user_ids
+            st.rerun()
+    with col2:
+        if st.button("Remove All", key="deselect_all_users"):
+            st.session_state.user_selection = []
+            st.rerun()
+    
+    # Only update session state if no button was clicked
+    if not st.session_state.get('button_clicked', False):
+        st.session_state.user_selection = selected_user_ids
+
     # Start with the full dataframe
     filtered_df = df.copy()
+
+    # Filter by selected user IDs
+    if selected_user_ids:  # Only filter if some users are selected
+        filtered_df = filtered_df[filtered_df['user_id'].isin(selected_user_ids)]
 
     if exclude_alcohol:
         filtered_df = filtered_df[filtered_df['did_drink_alcohol'] != 1]
     if exclude_sick:
         filtered_df = filtered_df[filtered_df['is_sick'] != 1]
+    if exclude_siren:
+        filtered_df = filtered_df[filtered_df['is_siren_night'] != 1]
 
     # Only filter active nights by scent if any are selected
     if selected_scent_serials:
@@ -189,7 +285,7 @@ if df is not None:
         ## ----------------------------------------------------------------------------- 
 
         fig_delta.update_layout(
-            title=f"{selected_feature}: Per-user Δ (Active – Control)",
+            title=f"{selected_feature}: Per-user delta (Active – Control)",
             xaxis=dict(title='User ID', type='category', tickangle=-45),
             yaxis_title='Δ',
             template='plotly_white',
@@ -211,6 +307,31 @@ if df is not None:
             },
             title=f"{selected_feature}: Distribution"
         )
+        
+        # Calculate medians for each condition and add connecting line
+        medians = []
+        x_positions = []
+        conditions = ['control', 'active', 'placebo']
+        
+        for condition in conditions:
+            condition_data = filtered_df[filtered_df['diffuser_category'] == condition][selected_feature]
+            if len(condition_data) > 0:
+                median_val = condition_data.median()
+                medians.append(median_val)
+                x_positions.append(condition)
+        
+        # Add median connecting line
+        if len(medians) > 1:
+            fig_box.add_trace(go.Scatter(
+                x=x_positions,
+                y=medians,
+                mode='lines+markers',
+                line=dict(color='red', width=2, dash='dot'),
+                marker=dict(color='red', size=8),
+                name='Median Trend',
+                hovertemplate='%{x}: %{y:.2f}<extra></extra>'
+            ))
+        
         st.plotly_chart(fig_box, use_container_width=True)
         # ⬆️ END NEW FIGURE BLOCK  ------------------------------------------------------
     else:
