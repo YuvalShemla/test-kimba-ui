@@ -108,6 +108,18 @@ def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5,
         hoverinfo='skip'
     ))
 
+    # Add delta mean (absolute difference) as a legend entry
+    delta_mean = active_mean - control_mean
+    delta_mean_text = f"Delta Mean: {delta_mean:+.2f} {unit}"
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(size=0),
+        name=delta_mean_text,
+        showlegend=True,
+        hoverinfo='skip'
+    ))
+
     # Add horizontal dashed lines for mean values
     control_mean = np.nanmean(y_control)
     active_mean = np.nanmean(y_active)

@@ -82,6 +82,11 @@ def load_data():
     if df is not None:
         # Identify siren nights
         df = identify_siren_nights(df)
+        
+        # Remove specific users from the dataset
+        excluded_users = ['1.0', '3.0', '5.0', '39.0']  # Match the float format in the dataset
+        df = df[~df['user_id'].isin(excluded_users)]
+        
     return df
 
 # Cache the data loading
