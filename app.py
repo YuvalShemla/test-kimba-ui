@@ -143,11 +143,6 @@ def identify_siren_nights(df):
 
 # Title
 st.title("Kimba Sleep Analysis")
-
-# Add cache refresh button
-if st.button("🔄 Refresh Data (Clear Cache)"):
-    st.cache_data.clear()
-    st.rerun()
     
 # Load data
 def load_data():
@@ -187,6 +182,22 @@ if df is not None:
         min_value=1,
         max_value=20,
         value=5
+    )
+    
+    # Legend statistics selection
+    legend_options = {
+        'control_mean': 'Control Mean Line',
+        'active_mean': 'Active Mean Line', 
+        'mean_diff': 'Mean % Difference',
+        'delta_mean': 'Delta Mean',
+        'positive_effect': 'Positive Effect %'
+    }
+    
+    selected_legend_stats = st.sidebar.multiselect(
+        "Legend Statistics",
+        options=list(legend_options.keys()),
+        default=[],
+        format_func=lambda x: legend_options[x]
     )
 
     # Sidebar filters
@@ -268,17 +279,25 @@ if df is not None:
 
     # Create and display the plot (very wide)
     display_name, unit = FEATURES_TO_PLOT[selected_feature]
-    fig = create_comparison_plot(filtered_df, selected_feature, display_name, unit, min_active_nights, fig_width=2400)
+    
+    # If no legend stats selected, show all by default (like other filters)
+    stats_to_show = selected_legend_stats if selected_legend_stats else list(legend_options.keys())
+    
+    fig = create_comparison_plot(
+        filtered_df, 
+        selected_feature, 
+        display_name, 
+        unit, 
+        min_active_nights, 
+        fig_width=2400,
+        positive_directions=POSITIVE_DIRECTIONS,
+        selected_stats=stats_to_show
+    )
     
     if fig is not None:
-        # Calculate positive effect percentage
-        total_users_with_data, positive_users, positive_percentage = calculate_positive_effect_percentage(
-            filtered_df, selected_feature, min_active_nights
-        )
-        
         # Display some statistics (move this block above the first plot)
         st.subheader("Dataset Overview")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Users", len(filtered_df['user_id'].unique()))
         with col2:
@@ -286,16 +305,6 @@ if df is not None:
         with col3:
             active_users = len(get_active_users(filtered_df, min_active_nights))
             st.metric("Valid Users (≥{} nights)".format(min_active_nights), active_users)
-        with col4:
-            direction = POSITIVE_DIRECTIONS.get(selected_feature, 'neutral')
-            if direction != 'neutral':
-                direction_text = "↑" if direction == 'increase' else "↓"
-                st.metric(
-                    f"Positive Effect {direction_text}", 
-                    f"{positive_users}/{total_users_with_data} ({positive_percentage:.1f}%)"
-                )
-            else:
-                st.metric("Positive Effect", "N/A (neutral)")
 
         st.plotly_chart(fig, use_container_width=False)
         

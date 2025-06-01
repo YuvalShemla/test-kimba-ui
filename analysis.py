@@ -4,10 +4,13 @@ import pandas as pd
 import numpy as np
 from palette import palette
 
-def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5, fig_width=2400):
+def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5, fig_width=2400, positive_directions=None, selected_stats=None):
     """
     Create an interactive comparison plot using Plotly Express
     """
+    if selected_stats is None:
+        selected_stats = ['mean_diff', 'delta_mean']
+    
     # Filter for active users
     active_nights = df[df['diffuser_category'] == 'active'].groupby('user_id').size()
     valid_users = active_nights[active_nights >= min_active_nights].index
@@ -45,6 +48,28 @@ def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5,
     mean_diff = np.nanmean(finite_diffs) if finite_diffs else float('nan')
     mean_diff_text = f"Mean % diff: {mean_diff:.2f}%" if np.isfinite(mean_diff) else "Mean % diff: N/A"
     
+    # Calculate positive effect percentage if positive_directions is provided
+    positive_effect_text = ""
+    if positive_directions and feature in positive_directions:
+        # Calculate deltas for positive effect
+        deltas = np.array(y_active) - np.array(y_control)
+        direction = positive_directions[feature]
+        
+        if direction == 'increase':
+            positive_users = (deltas > 0).sum()
+        elif direction == 'decrease':
+            positive_users = (deltas < 0).sum()
+        else:  # neutral
+            positive_users = 0
+        
+        total_users = len(deltas)
+        if direction != 'neutral' and total_users > 0:
+            percentage = (positive_users / total_users) * 100
+            direction_symbol = "↑" if direction == 'increase' else "↓"
+            positive_effect_text = f"Positive Effect {direction_symbol}: {positive_users}/{total_users} ({percentage:.1f}%)"
+        else:
+            positive_effect_text = "Positive Effect: N/A (neutral)"
+    
     # Create the figure
     fig = go.Figure()
     
@@ -76,54 +101,67 @@ def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5,
     control_mean = np.nanmean(y_control)
     active_mean = np.nanmean(y_active)
     
-    # Add control mean line as a trace (appears in legend)
-    fig.add_trace(go.Scatter(
-        x=[custom_labels[0], custom_labels[-1]],
-        y=[control_mean, control_mean],
-        mode='lines',
-        line=dict(color=palette["control"], dash='dash', width=3),
-        name='Control Mean',
-        hoverinfo='skip',
-        showlegend=True
-    ))
+    # Conditionally add stats to legend based on selection
+    if 'control_mean' in selected_stats:
+        # Add control mean line as a trace (appears in legend)
+        fig.add_trace(go.Scatter(
+            x=[custom_labels[0], custom_labels[-1]],
+            y=[control_mean, control_mean],
+            mode='lines',
+            line=dict(color=palette["control"], dash='dash', width=3),
+            name='Control Mean',
+            hoverinfo='skip',
+            showlegend=True
+        ))
     
-    # Add active mean line as a trace (appears in legend)  
-    fig.add_trace(go.Scatter(
-        x=[custom_labels[0], custom_labels[-1]],
-        y=[active_mean, active_mean],
-        mode='lines',
-        line=dict(color=palette["active"], dash='dash', width=3),
-        name='Active Mean',
-        hoverinfo='skip',
-        showlegend=True
-    ))
+    if 'active_mean' in selected_stats:
+        # Add active mean line as a trace (appears in legend)  
+        fig.add_trace(go.Scatter(
+            x=[custom_labels[0], custom_labels[-1]],
+            y=[active_mean, active_mean],
+            mode='lines',
+            line=dict(color=palette["active"], dash='dash', width=3),
+            name='Active Mean',
+            hoverinfo='skip',
+            showlegend=True
+        ))
 
-    # Add mean percentage difference as a legend entry (invisible trace)
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(size=0),
-        name=mean_diff_text,
-        showlegend=True,
-        hoverinfo='skip'
-    ))
+    if 'mean_diff' in selected_stats:
+        # Add mean percentage difference as a legend entry (invisible trace)
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=0),
+            name=mean_diff_text,
+            showlegend=True,
+            hoverinfo='skip'
+        ))
 
-    # Add delta mean (absolute difference) as a legend entry
-    delta_mean = active_mean - control_mean
-    delta_mean_text = f"Delta Mean: {delta_mean:+.2f} {unit}"
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(size=0),
-        name=delta_mean_text,
-        showlegend=True,
-        hoverinfo='skip'
-    ))
+    if 'delta_mean' in selected_stats:
+        # Add delta mean (absolute difference) as a legend entry
+        delta_mean = active_mean - control_mean
+        delta_mean_text = f"Delta Mean: {delta_mean:+.2f} {unit}"
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=0),
+            name=delta_mean_text,
+            showlegend=True,
+            hoverinfo='skip'
+        ))
 
-    # Add horizontal dashed lines for mean values
-    control_mean = np.nanmean(y_control)
-    active_mean = np.nanmean(y_active)
-    
+    if 'positive_effect' in selected_stats and positive_effect_text:
+        # Add positive effect as a legend entry
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=0),
+            name=positive_effect_text,
+            showlegend=True,
+            hoverinfo='skip'
+        ))
+
+    # Add horizontal dashed lines for mean values (always show the lines, regardless of legend)
     # Control mean line
     fig.add_shape(
         type='line',
@@ -156,8 +194,8 @@ def create_comparison_plot(df, feature, display_name, unit, min_active_nights=5,
             orientation='h', 
             yanchor='bottom', 
             y=1.02, 
-            xanchor='left', 
-            x=0,
+            xanchor='center', 
+            x=0.5,
             font=dict(size=14)
         ),
         plot_bgcolor='rgba(0,0,0,0)',
