@@ -18,6 +18,75 @@ st.set_page_config(
     layout="wide"
 )
 
+# Define which direction is positive for each feature
+POSITIVE_DIRECTIONS = {
+    'heart_rate_mean': 'decrease',  # Lower heart rate is better
+    'bbi_mean': 'increase',  # Higher BBI (heart rate variability) is better
+    'hrv_std_hr_mean': 'increase',  # Higher HRV is better
+    'stress_level_mean': 'decrease',  # Lower stress is better
+    'sleep_efficiency': 'increase',  # Higher efficiency is better
+    'total_sleep_time': 'increase',  # More sleep is better
+    'waso_duration': 'decrease',  # Less wake after sleep onset is better
+    'waso_count': 'decrease',  # Fewer wake episodes is better
+    'sleep_latency': 'decrease',  # Faster sleep onset is better
+    'acc_magnitude_mean': 'decrease',  # Less movement is better
+    'respiration_rate_mean': 'neutral',  # No clear direction
+    'oxygen_level_mean': 'increase',  # Higher SpO2 is better
+    'deep_duration': 'increase',  # More deep sleep is better
+    'rem_duration': 'increase',  # More REM sleep is better
+}
+
+def calculate_positive_effect_percentage(filtered_df, selected_feature, min_active_nights):
+    """
+    Calculate the percentage of users where the effect was positive
+    """
+    # Filter for valid users (same as main analysis)
+    active_nights = filtered_df[filtered_df['diffuser_category'] == 'active'].groupby('user_id').size()
+    valid_users = active_nights[active_nights >= min_active_nights].index
+    user_filtered_df = filtered_df[filtered_df['user_id'].isin(valid_users)]
+    
+    # Calculate user means for control and active
+    user_means = (
+        user_filtered_df
+        .groupby(['user_id', 'diffuser_category'])[selected_feature]
+        .mean()
+        .reset_index()
+    )
+    
+    # Pivot to get control and active columns
+    slopes = (
+        user_means
+        .pivot(index='user_id', columns='diffuser_category', values=selected_feature)
+        .reset_index()
+    )
+    
+    # Only include users who have both control and active data
+    slopes = slopes.dropna(subset=['control', 'active'])
+    
+    if len(slopes) == 0:
+        return 0, 0, 0
+    
+    # Calculate delta (active - control)
+    slopes['delta'] = slopes['active'] - slopes['control']
+    
+    # Determine positive effects based on feature direction
+    direction = POSITIVE_DIRECTIONS.get(selected_feature, 'neutral')
+    
+    if direction == 'increase':
+        # Positive effect means delta > 0 (active > control)
+        positive_users = (slopes['delta'] > 0).sum()
+    elif direction == 'decrease':
+        # Positive effect means delta < 0 (active < control)
+        positive_users = (slopes['delta'] < 0).sum()
+    else:  # neutral
+        # For neutral features, we can't determine positive direction
+        return len(slopes), 0, 0
+    
+    total_users = len(slopes)
+    percentage = (positive_users / total_users * 100) if total_users > 0 else 0
+    
+    return total_users, positive_users, percentage
+
 def identify_siren_nights(df):
     """
     Identify nights that overlap with siren events
@@ -202,9 +271,14 @@ if df is not None:
     fig = create_comparison_plot(filtered_df, selected_feature, display_name, unit, min_active_nights, fig_width=2400)
     
     if fig is not None:
+        # Calculate positive effect percentage
+        total_users_with_data, positive_users, positive_percentage = calculate_positive_effect_percentage(
+            filtered_df, selected_feature, min_active_nights
+        )
+        
         # Display some statistics (move this block above the first plot)
         st.subheader("Dataset Overview")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Users", len(filtered_df['user_id'].unique()))
         with col2:
@@ -212,6 +286,16 @@ if df is not None:
         with col3:
             active_users = len(get_active_users(filtered_df, min_active_nights))
             st.metric("Valid Users (≥{} nights)".format(min_active_nights), active_users)
+        with col4:
+            direction = POSITIVE_DIRECTIONS.get(selected_feature, 'neutral')
+            if direction != 'neutral':
+                direction_text = "↑" if direction == 'increase' else "↓"
+                st.metric(
+                    f"Positive Effect {direction_text}", 
+                    f"{positive_users}/{total_users_with_data} ({positive_percentage:.1f}%)"
+                )
+            else:
+                st.metric("Positive Effect", "N/A (neutral)")
 
         st.plotly_chart(fig, use_container_width=False)
         
