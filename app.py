@@ -350,7 +350,8 @@ if df is not None:
         fig_delta.add_trace(go.Scatter(
             x=slopes['user_id'], y=slopes['delta'],
             mode='markers', marker=dict(color=colours, size=10),
-            hovertemplate='User %{x}<br>Δ = %{y:.2f}<extra></extra>'
+            hovertemplate='User %{x}<br>Δ = %{y:.2f}<extra></extra>',
+            name='User Deltas'
         ))
 
         # horizontal dashed zero line
@@ -381,6 +382,64 @@ if df is not None:
             showarrow=False,
             font=dict(color=mean_color, size=18, family='Arial')
         )
+        
+        # Add legend statistics for delta plot
+        if 'delta_mean' in stats_to_show:
+            delta_mean_text = f"Delta Mean: {mean_delta:+.2f} {unit}"
+            fig_delta.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=0),
+                name=delta_mean_text,
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+        
+        if 'mean_diff' in stats_to_show:
+            # Calculate mean percentage difference for delta plot
+            control_mean = np.nanmean([slopes.loc[slopes['user_id'] == uid, 'control'].iloc[0] for uid in slopes['user_id']])
+            active_mean = np.nanmean([slopes.loc[slopes['user_id'] == uid, 'active'].iloc[0] for uid in slopes['user_id']])
+            if control_mean != 0:
+                mean_perc_diff = ((active_mean - control_mean) / control_mean) * 100
+                mean_diff_text = f"Mean % diff: {mean_perc_diff:.2f}%" if np.isfinite(mean_perc_diff) else "Mean % diff: N/A"
+            else:
+                mean_diff_text = "Mean % diff: N/A"
+                
+            fig_delta.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=0),
+                name=mean_diff_text,
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+            
+        if 'positive_effect' in stats_to_show:
+            # Calculate positive effect for delta plot
+            direction = POSITIVE_DIRECTIONS.get(selected_feature, 'neutral')
+            if direction == 'increase':
+                positive_users = (slopes['delta'] > 0).sum()
+            elif direction == 'decrease':
+                positive_users = (slopes['delta'] < 0).sum()
+            else:
+                positive_users = 0
+            
+            total_users = len(slopes)
+            if direction != 'neutral' and total_users > 0:
+                percentage = (positive_users / total_users) * 100
+                direction_symbol = "↑" if direction == 'increase' else "↓"
+                positive_effect_text = f"Positive Effect {direction_symbol}: {positive_users}/{total_users} ({percentage:.1f}%)"
+            else:
+                positive_effect_text = "Positive Effect: N/A (neutral)"
+                
+            fig_delta.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=0),
+                name=positive_effect_text,
+                showlegend=True,
+                hoverinfo='skip'
+            ))
         # ─────────────────────────────────────────────────────────────────────────
 
         # --- Make the y-axis symmetric -------------------------------------------------
@@ -398,7 +457,15 @@ if df is not None:
             yaxis_title='Δ',
             template='plotly_white',
             height=400,
-            margin=dict(l=60, r=40, t=60, b=120)
+            margin=dict(l=60, r=40, t=60, b=120),
+            legend=dict(
+                orientation='h', 
+                yanchor='bottom', 
+                y=1.02, 
+                xanchor='center', 
+                x=0.5,
+                font=dict(size=14)
+            )
         )
         st.plotly_chart(fig_delta, use_container_width=True)
 
@@ -439,6 +506,110 @@ if df is not None:
                 name='Median Trend',
                 hovertemplate='%{x}: %{y:.2f}<extra></extra>'
             ))
+        
+        # Add legend statistics for box plot
+        if 'mean_diff' in stats_to_show:
+            # Calculate mean percentage difference for box plot
+            control_data = filtered_df[filtered_df['diffuser_category'] == 'control'][selected_feature]
+            active_data = filtered_df[filtered_df['diffuser_category'] == 'active'][selected_feature]
+            control_mean = control_data.mean()
+            active_mean = active_data.mean()
+            
+            if control_mean != 0 and not pd.isna(control_mean) and not pd.isna(active_mean):
+                mean_perc_diff = ((active_mean - control_mean) / control_mean) * 100
+                mean_diff_text = f"Mean % diff: {mean_perc_diff:.2f}%" if np.isfinite(mean_perc_diff) else "Mean % diff: N/A"
+            else:
+                mean_diff_text = "Mean % diff: N/A"
+                
+            fig_box.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=0),
+                name=mean_diff_text,
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+            
+        if 'delta_mean' in stats_to_show:
+            # Calculate delta mean for box plot
+            control_data = filtered_df[filtered_df['diffuser_category'] == 'control'][selected_feature]
+            active_data = filtered_df[filtered_df['diffuser_category'] == 'active'][selected_feature]
+            control_mean = control_data.mean()
+            active_mean = active_data.mean()
+            
+            if not pd.isna(control_mean) and not pd.isna(active_mean):
+                delta_mean = active_mean - control_mean
+                delta_mean_text = f"Delta Mean: {delta_mean:+.2f} {unit}"
+            else:
+                delta_mean_text = "Delta Mean: N/A"
+                
+            fig_box.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=0),
+                name=delta_mean_text,
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+            
+        if 'positive_effect' in stats_to_show:
+            # Calculate positive effect for box plot (using user-level data)
+            user_means_box = (
+                filtered_df
+                .groupby(['user_id', 'diffuser_category'])[selected_feature]
+                .mean()
+                .reset_index()
+            )
+            
+            slopes_box = (
+                user_means_box
+                .pivot(index='user_id', columns='diffuser_category', values=selected_feature)
+                .reset_index()
+            )
+            
+            slopes_box = slopes_box.dropna(subset=['control', 'active'])
+            
+            if len(slopes_box) > 0:
+                slopes_box['delta'] = slopes_box['active'] - slopes_box['control']
+                
+                direction = POSITIVE_DIRECTIONS.get(selected_feature, 'neutral')
+                if direction == 'increase':
+                    positive_users = (slopes_box['delta'] > 0).sum()
+                elif direction == 'decrease':
+                    positive_users = (slopes_box['delta'] < 0).sum()
+                else:
+                    positive_users = 0
+                
+                total_users = len(slopes_box)
+                if direction != 'neutral' and total_users > 0:
+                    percentage = (positive_users / total_users) * 100
+                    direction_symbol = "↑" if direction == 'increase' else "↓"
+                    positive_effect_text = f"Positive Effect {direction_symbol}: {positive_users}/{total_users} ({percentage:.1f}%)"
+                else:
+                    positive_effect_text = "Positive Effect: N/A (neutral)"
+            else:
+                positive_effect_text = "Positive Effect: No data"
+                
+            fig_box.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=0),
+                name=positive_effect_text,
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+        
+        # Update box plot layout with centered legend
+        fig_box.update_layout(
+            legend=dict(
+                orientation='h', 
+                yanchor='bottom', 
+                y=1.02, 
+                xanchor='center', 
+                x=0.5,
+                font=dict(size=14)
+            )
+        )
         
         st.plotly_chart(fig_box, use_container_width=True)
         # ⬆️ END NEW FIGURE BLOCK  ------------------------------------------------------
